@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "45294145587",
+    "project_id": "gdgnativechatapp",
+    "storage_bucket": "gdgnativechatapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:45294145587:android:e6cf7c412a0241f84d9346",
+        "android_client_info": {
+          "package_name": "com.example.gdg_nativechatapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBHrlRPz_PSJYm760tM8-h7KlK7tQFTs0Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
