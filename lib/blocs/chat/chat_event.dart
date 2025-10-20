@@ -55,3 +55,13 @@ class ChatMarkAsRead extends ChatEvent {
   @override
   List<Object?> get props => [chatId, messageId];
 }
+
+class ChatMessagesUpdated extends ChatEvent {
+  final String chatId;
+  final List<dynamic> messages;
+
+  const ChatMessagesUpdated(this.chatId, this.messages);
+
+  @override
+  List<Object?> get props => [chatId, messages];
+}

@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../models/chat_model.dart';
 
 abstract class HomeEvent extends Equatable {
   const HomeEvent();
@@ -35,4 +36,13 @@ class HomeSelectChat extends HomeEvent {
 
   @override
   List<Object?> get props => [chatId];
+}
+
+class HomeChatsUpdated extends HomeEvent {
+  final List<ChatModel> chats;
+
+  const HomeChatsUpdated(this.chats);
+
+  @override
+  List<Object?> get props => [chats];
 }

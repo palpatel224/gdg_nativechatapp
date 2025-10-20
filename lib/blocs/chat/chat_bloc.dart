@@ -1,15 +1,23 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'chat_event.dart';
 import 'chat_state.dart';
 import '../../models/message_model.dart';
+import '../../services/chat_service.dart';
 
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
-  ChatBloc() : super(const ChatInitial()) {
+  final ChatService _chatService;
+  StreamSubscription? _messagesSubscription;
+
+  ChatBloc(this._chatService) : super(const ChatInitial()) {
     on<ChatLoadMessages>(_onLoadMessages);
     on<ChatSendMessage>(_onSendMessage);
     on<ChatSendImage>(_onSendImage);
     on<ChatTyping>(_onTyping);
     on<ChatMarkAsRead>(_onMarkAsRead);
+    on<ChatMessagesUpdated>(_onMessagesUpdated);
   }
 
   Future<void> _onLoadMessages(
@@ -18,41 +26,93 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     emit(const ChatLoading());
     try {
-      // TODO: Fetch messages from repository
-      await Future.delayed(const Duration(seconds: 1));
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+      if (currentUserId == null) {
+        emit(const ChatError('User not authenticated'));
+        return;
+      }
 
-      // Dummy data for UI
-      final messages = _getDummyMessages();
-      emit(ChatLoaded(chatId: event.chatId, messages: messages));
+      // Cancel previous subscription if exists
+      await _messagesSubscription?.cancel();
+
+      // Listen to messages stream with real-time updates
+      // Query orders messages by timestamp in descending order (newest first)
+      // This works with ListView.builder's reverse: true for optimal chat UX
+      _messagesSubscription = FirebaseFirestore.instance
+          .collection('chats')
+          .doc(event.chatId)
+          .collection('messages')
+          .orderBy('timestamp', descending: true)
+          .snapshots()
+          .listen(
+            (snapshot) {
+              // Get other user's info for message display
+              final messages = snapshot.docs.map((doc) {
+                final data = doc.data();
+                final senderId = data['senderId'] as String;
+                final isSentByMe = senderId == currentUserId;
+
+                return MessageModel(
+                  id: doc.id,
+                  senderId: senderId,
+                  senderName: isSentByMe ? 'Me' : 'User',
+                  senderAvatar: '',
+                  text: data['text'] as String?,
+                  messageType: data['messageType'] == 'location'
+                      ? MessageType.location
+                      : MessageType.text,
+                  timestamp:
+                      (data['timestamp'] as Timestamp?)?.toDate() ??
+                      DateTime.now(),
+                  status: MessageStatus.sent,
+                  isSentByMe: isSentByMe,
+                  locationData: data['locationData'] != null
+                      ? LocationData.fromMap(
+                          data['locationData'] as Map<String, dynamic>,
+                        )
+                      : null,
+                );
+              }).toList();
+
+              add(ChatMessagesUpdated(event.chatId, messages));
+            },
+            onError: (error) {
+              add(ChatError(error.toString()) as ChatEvent);
+            },
+          );
     } catch (e) {
       emit(ChatError(e.toString()));
     }
+  }
+
+  Future<void> _onMessagesUpdated(
+    ChatMessagesUpdated event,
+    Emitter<ChatState> emit,
+  ) async {
+    final messages = event.messages.cast<MessageModel>();
+    emit(ChatLoaded(chatId: event.chatId, messages: messages));
   }
 
   Future<void> _onSendMessage(
     ChatSendMessage event,
     Emitter<ChatState> emit,
   ) async {
-    if (state is ChatLoaded) {
-      try {
-        // TODO: Send message to repository
-        final currentState = state as ChatLoaded;
-
-        final newMessage = MessageModel(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          senderId: 'currentUserId',
-          senderName: 'Me',
-          senderAvatar: '',
-          content: event.content,
-          timestamp: DateTime.now(),
-          isSentByMe: true,
-        );
-
-        final updatedMessages = [...currentState.messages, newMessage];
-        emit(currentState.copyWith(messages: updatedMessages));
-      } catch (e) {
-        emit(ChatError(e.toString()));
+    try {
+      // Validate message content
+      final trimmedContent = event.content.trim();
+      if (trimmedContent.isEmpty) {
+        return; // Do nothing if message is empty
       }
+
+      // Send message through service
+      // This performs a two-step write:
+      // 1. Adds message to messages subcollection
+      // 2. Updates lastMessage field in parent chat document for home screen preview
+      await _chatService.sendMessage(event.chatId, trimmedContent);
+
+      // Messages will be updated via the stream subscription
+    } catch (e) {
+      emit(ChatError('Failed to send message: ${e.toString()}'));
     }
   }
 
@@ -60,34 +120,19 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     ChatSendImage event,
     Emitter<ChatState> emit,
   ) async {
-    if (state is ChatLoaded) {
-      try {
-        // TODO: Upload image and send message
-        final currentState = state as ChatLoaded;
-
-        final newMessage = MessageModel(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          senderId: 'currentUserId',
-          senderName: 'Me',
-          senderAvatar: '',
-          content: event.imagePath,
-          type: MessageType.image,
-          timestamp: DateTime.now(),
-          isSentByMe: true,
-        );
-
-        final updatedMessages = [...currentState.messages, newMessage];
-        emit(currentState.copyWith(messages: updatedMessages));
-      } catch (e) {
-        emit(ChatError(e.toString()));
-      }
+    try {
+      // TODO: Upload image functionality will be added later
+      // For now, this is a placeholder
+    } catch (e) {
+      emit(ChatError(e.toString()));
     }
   }
 
   Future<void> _onTyping(ChatTyping event, Emitter<ChatState> emit) async {
-    if (state is ChatLoaded) {
-      final currentState = state as ChatLoaded;
-      emit(currentState.copyWith(isOtherUserTyping: event.isTyping));
+    try {
+      await _chatService.updateTypingStatus(event.chatId, event.isTyping);
+    } catch (e) {
+      // Silently fail for typing indicators
     }
   }
 
@@ -95,47 +140,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     ChatMarkAsRead event,
     Emitter<ChatState> emit,
   ) async {
-    // TODO: Mark message as read in repository
+    try {
+      // TODO: Implement mark as read functionality
+    } catch (e) {
+      // Silently fail for read receipts
+    }
   }
 
-  List<MessageModel> _getDummyMessages() {
-    return [
-      MessageModel(
-        id: '1',
-        senderId: 'user1',
-        senderName: 'John Doe',
-        senderAvatar: '',
-        content: 'Hey! How are you doing?',
-        timestamp: DateTime.now().subtract(const Duration(minutes: 30)),
-        isSentByMe: false,
-      ),
-      MessageModel(
-        id: '2',
-        senderId: 'currentUserId',
-        senderName: 'Me',
-        senderAvatar: '',
-        content: "I'm good! Thanks for asking. How about you?",
-        timestamp: DateTime.now().subtract(const Duration(minutes: 28)),
-        isSentByMe: true,
-      ),
-      MessageModel(
-        id: '3',
-        senderId: 'user1',
-        senderName: 'John Doe',
-        senderAvatar: '',
-        content: "I'm doing great! Working on a new project.",
-        timestamp: DateTime.now().subtract(const Duration(minutes: 25)),
-        isSentByMe: false,
-      ),
-      MessageModel(
-        id: '4',
-        senderId: 'currentUserId',
-        senderName: 'Me',
-        senderAvatar: '',
-        content: 'That sounds exciting! What kind of project?',
-        timestamp: DateTime.now().subtract(const Duration(minutes: 20)),
-        isSentByMe: true,
-      ),
-    ];
+  @override
+  Future<void> close() {
+    _messagesSubscription?.cancel();
+    return super.close();
   }
 }

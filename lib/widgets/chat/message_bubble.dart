@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/message_model.dart';
 
 class MessageBubble extends StatelessWidget {
@@ -49,32 +48,57 @@ class MessageBubble extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: message.type == MessageType.text
+                  child: message.messageType == MessageType.text
                       ? Text(
-                          message.content,
+                          message.text ?? '',
                           style: TextStyle(
                             color: isMe ? Colors.white : Colors.black87,
                             fontSize: 15,
                           ),
                         )
-                      : message.type == MessageType.image
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: CachedNetworkImage(
-                            imageUrl: message.content,
-                            width: 200,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(
-                              width: 200,
-                              height: 200,
-                              color: Colors.grey[300],
-                              child: const Center(
-                                child: CircularProgressIndicator(),
-                              ),
+                      : message.messageType == MessageType.location
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(
+                                  Icons.location_on,
+                                  color: Colors.red,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Location',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
                             ),
-                            errorWidget: (context, url, error) =>
-                                const Icon(Icons.error),
-                          ),
+                            if (message.locationData != null) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                message.locationData!.address,
+                                style: TextStyle(
+                                  color: isMe ? Colors.white : Colors.black87,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Lat: ${message.locationData!.latitude.toStringAsFixed(4)}, '
+                                'Lon: ${message.locationData!.longitude.toStringAsFixed(4)}',
+                                style: TextStyle(
+                                  color: isMe
+                                      ? Colors.white70
+                                      : Colors.grey[600],
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ],
                         )
                       : const SizedBox.shrink(),
                 ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../blocs/home/home_bloc.dart';
+import '../repositories/chat_repository.dart';
 import '../widgets/common/custom_bottom_nav_bar.dart';
 import 'home/home_page.dart';
 
@@ -29,7 +30,7 @@ class _MainPageState extends State<MainPage> {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (context) => HomeBloc(),
+      create: (context) => HomeBloc(context.read<ChatRepository>()),
       child: Scaffold(
         body: Stack(
           children: [

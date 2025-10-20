@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'home_event.dart';
 import 'home_state.dart';
 import '../../models/chat_model.dart';
+import '../../repositories/chat_repository.dart';
 
 class HomeBloc extends Bloc<HomeEvent, HomeState> {
-  HomeBloc() : super(const HomeInitial()) {
+  final ChatRepository _chatRepository;
+
+  HomeBloc(this._chatRepository) : super(const HomeInitial()) {
     on<HomeLoadChats>(_onLoadChats);
     on<HomeRefreshChats>(_onRefreshChats);
     on<HomeSearchChats>(_onSearchChats);
@@ -17,16 +21,17 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
     Emitter<HomeState> emit,
   ) async {
     emit(const HomeLoading());
-    try {
-      // TODO: Fetch chats from repository
-      await Future.delayed(const Duration(seconds: 1));
 
-      // Dummy data for UI
-      final chats = _getDummyChats();
-      emit(HomeLoaded(chats: chats));
-    } catch (e) {
-      emit(HomeError(e.toString()));
-    }
+    // Use emit.forEach to properly handle the stream
+    await emit.forEach<List<ChatModel>>(
+      _chatRepository.getChatsStream(),
+      onData: (chats) {
+        return HomeLoaded(chats: chats);
+      },
+      onError: (error, stackTrace) {
+        return HomeError(error.toString());
+      },
+    );
   }
 
   Future<void> _onRefreshChats(
@@ -34,11 +39,8 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
     Emitter<HomeState> emit,
   ) async {
     try {
-      // TODO: Refresh chats from repository
-      await Future.delayed(const Duration(seconds: 1));
-
-      final chats = _getDummyChats();
-      emit(HomeLoaded(chats: chats));
+      // The stream will automatically refresh, but we can trigger a reload
+      add(const HomeLoadChats());
     } catch (e) {
       emit(HomeError(e.toString()));
     }
@@ -48,16 +50,15 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
     HomeSearchChats event,
     Emitter<HomeState> emit,
   ) async {
-    if (state is HomeLoaded) {
-      final currentState = state as HomeLoaded;
-      // TODO: Implement actual search logic
-      final filteredChats = currentState.chats
-          .where(
-            (chat) =>
-                chat.userName.toLowerCase().contains(event.query.toLowerCase()),
-          )
-          .toList();
+    try {
+      emit(const HomeLoading());
+
+      // Search chats using the repository
+      final filteredChats = await _chatRepository.searchChats(event.query);
+
       emit(HomeLoaded(chats: filteredChats, searchQuery: event.query));
+    } catch (e) {
+      emit(HomeError(e.toString()));
     }
   }
 
@@ -65,50 +66,14 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
     HomeClearSearch event,
     Emitter<HomeState> emit,
   ) async {
-    // TODO: Reload all chats
-    final chats = _getDummyChats();
-    emit(HomeLoaded(chats: chats));
+    // Reload all chats by triggering the load event
+    add(const HomeLoadChats());
   }
 
   Future<void> _onSelectChat(
     HomeSelectChat event,
     Emitter<HomeState> emit,
   ) async {
-    // TODO: Handle chat selection navigation
-  }
-
-  List<ChatModel> _getDummyChats() {
-    return [
-      ChatModel(
-        id: '1',
-        userId: 'user1',
-        userName: 'John Doe',
-        userAvatar: '',
-        lastMessage: 'Hey! How are you doing?',
-        lastMessageTime: DateTime.now().subtract(const Duration(minutes: 5)),
-        unreadCount: 2,
-        isOnline: true,
-      ),
-      ChatModel(
-        id: '2',
-        userId: 'user2',
-        userName: 'Jane Smith',
-        userAvatar: '',
-        lastMessage: 'See you tomorrow!',
-        lastMessageTime: DateTime.now().subtract(const Duration(hours: 2)),
-        unreadCount: 0,
-        isOnline: false,
-      ),
-      ChatModel(
-        id: '3',
-        userId: 'user3',
-        userName: 'Mike Johnson',
-        userAvatar: '',
-        lastMessage: 'Thanks for your help!',
-        lastMessageTime: DateTime.now().subtract(const Duration(hours: 5)),
-        unreadCount: 1,
-        isOnline: true,
-      ),
-    ];
+    // TODO: Handle chat selection navigation if needed
   }
 }

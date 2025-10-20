@@ -201,6 +201,7 @@ class _ChatPageState extends State<ChatPage> {
                         )
                       : ListView.builder(
                           controller: _scrollController,
+                          reverse: true, // Display newest messages at bottom
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           itemCount:
                               state.messages.length +

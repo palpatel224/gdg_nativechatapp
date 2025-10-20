@@ -7,6 +7,7 @@ import '../../blocs/auth/auth_bloc.dart';
 import '../../blocs/auth/auth_event.dart';
 import '../../widgets/home/chat_list_item.dart';
 import '../../widgets/home/search_bar_widget.dart';
+import 'user_list_screen.dart';
 import '../chat/chat_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -68,7 +69,13 @@ class _HomePageState extends State<HomePage> {
               title: const Text('Chat'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Open new chat
+                // Navigate to UserListScreen to select a user
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const UserListScreen(),
+                  ),
+                );
               },
             ),
             ListTile(

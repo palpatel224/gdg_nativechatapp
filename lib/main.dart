@@ -6,8 +6,10 @@ import 'blocs/auth/auth_event.dart';
 import 'blocs/auth/auth_state.dart';
 import 'blocs/chat/chat_bloc.dart';
 import 'repositories/auth_repository.dart';
+import 'repositories/chat_repository.dart';
 import 'services/auth_service.dart';
 import 'services/profile_service.dart';
+import 'services/chat_service.dart';
 import 'pages/auth/login_page.dart';
 import 'pages/main_page.dart';
 import 'theme/theme.dart';
@@ -26,14 +28,19 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final authService = AuthService();
     final profileService = ProfileService();
-    final repo = AuthRepository(authService, profileService);
+    final chatService = ChatService();
+    final authRepo = AuthRepository(authService, profileService);
+    final chatRepo = ChatRepository(chatService);
 
-    return RepositoryProvider.value(
-      value: repo,
+    return MultiRepositoryProvider(
+      providers: [
+        RepositoryProvider.value(value: authRepo),
+        RepositoryProvider.value(value: chatRepo),
+      ],
       child: MultiBlocProvider(
         providers: [
-          BlocProvider(create: (_) => AuthBloc(repo)..add(AuthStarted())),
-          BlocProvider(create: (_) => ChatBloc()),
+          BlocProvider(create: (_) => AuthBloc(authRepo)..add(AuthStarted())),
+          BlocProvider(create: (_) => ChatBloc(chatService)),
         ],
         child: MaterialApp(
           title: 'Chat App',
