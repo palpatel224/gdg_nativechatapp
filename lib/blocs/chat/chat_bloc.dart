@@ -20,6 +20,47 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatMessagesUpdated>(_onMessagesUpdated);
   }
 
+  /// Update message statuses based on current viewing state
+  /// - Updates messages from other user to 'delivered' if they are 'sent'
+  /// - Updates messages from other user to 'read' when viewing the chat
+  Future<void> _updateMessageStatuses(
+    String chatId,
+    List<QueryDocumentSnapshot> docs,
+    String currentUserId,
+  ) async {
+    final batch = FirebaseFirestore.instance.batch();
+    bool hasUpdates = false;
+
+    for (var doc in docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final senderId = data['senderId'] as String;
+      final status = data['status'] as String? ?? 'sent';
+
+      // Only update messages from the other user
+      if (senderId != currentUserId) {
+        // Mark as delivered if still in sent status
+        if (status == 'sent') {
+          batch.update(doc.reference, {'status': 'delivered'});
+          hasUpdates = true;
+        }
+        // Mark as read (happens when actively viewing)
+        else if (status == 'delivered') {
+          batch.update(doc.reference, {'status': 'read'});
+          hasUpdates = true;
+        }
+      }
+    }
+
+    if (hasUpdates) {
+      try {
+        await batch.commit();
+      } catch (e) {
+        // Silently fail for status updates
+        print('Failed to update message statuses: $e');
+      }
+    }
+  }
+
   Future<void> _onLoadMessages(
     ChatLoadMessages event,
     Emitter<ChatState> emit,
@@ -46,11 +87,32 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           .snapshots()
           .listen(
             (snapshot) {
+              // Update message statuses (delivered/read) before processing
+              _updateMessageStatuses(
+                event.chatId,
+                snapshot.docs,
+                currentUserId,
+              );
+
               // Get other user's info for message display
               final messages = snapshot.docs.map((doc) {
                 final data = doc.data();
                 final senderId = data['senderId'] as String;
                 final isSentByMe = senderId == currentUserId;
+
+                // Parse status from Firestore data
+                final statusStr = data['status'] as String? ?? 'sent';
+                MessageStatus status;
+                switch (statusStr) {
+                  case 'read':
+                    status = MessageStatus.read;
+                    break;
+                  case 'delivered':
+                    status = MessageStatus.delivered;
+                    break;
+                  default:
+                    status = MessageStatus.sent;
+                }
 
                 return MessageModel(
                   id: doc.id,
@@ -64,7 +126,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                   timestamp:
                       (data['timestamp'] as Timestamp?)?.toDate() ??
                       DateTime.now(),
-                  status: MessageStatus.sent,
+                  status: status,
                   isSentByMe: isSentByMe,
                   locationData: data['locationData'] != null
                       ? LocationData.fromMap(

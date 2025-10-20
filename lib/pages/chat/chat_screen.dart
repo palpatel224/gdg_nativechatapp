@@ -26,10 +26,76 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    // Mark messages as delivered when this chat screen is opened
+    _markMessagesAsDelivered();
+  }
+
+  @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Mark all undelivered messages from the other user as 'delivered'
+  /// This runs once when the chat screen is opened
+  Future<void> _markMessagesAsDelivered() async {
+    final currentUserUid = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserUid == null) return;
+
+    try {
+      final messagesSnapshot = await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(widget.chatId)
+          .collection('messages')
+          .where('senderId', isNotEqualTo: currentUserUid)
+          .where('status', isEqualTo: 'sent')
+          .get();
+
+      if (messagesSnapshot.docs.isEmpty) return;
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (var doc in messagesSnapshot.docs) {
+        batch.update(doc.reference, {'status': 'delivered'});
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Failed to mark messages as delivered: $e');
+    }
+  }
+
+  /// Update message statuses to 'read' for messages sent by the other user
+  /// This function uses batch writes for efficient updates
+  Future<void> _updateStatuses(List<DocumentSnapshot> docs) async {
+    final currentUserUid = FirebaseAuth.instance.currentUser!.uid;
+    final batch = FirebaseFirestore.instance.batch();
+
+    bool hasUpdates = false;
+
+    // Loop through messages and mark unread messages from other user as 'read'
+    for (var doc in docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final senderId = data['senderId'] as String;
+      final status = data['status'] as String?;
+
+      // Only update messages sent by the other user that are not yet 'read'
+      if (senderId != currentUserUid && status != 'read') {
+        batch.update(doc.reference, {'status': 'read'});
+        hasUpdates = true;
+      }
+    }
+
+    // Commit batch only if there are updates to perform
+    if (hasUpdates) {
+      try {
+        await batch.commit();
+      } catch (e) {
+        // Silently fail for read receipts
+        debugPrint('Failed to update message statuses: $e');
+      }
+    }
   }
 
   /// Send a text message to Firestore
@@ -215,7 +281,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
 
                 final messages = snapshot.data!.docs;
-                final currentUserId = FirebaseAuth.instance.currentUser!.uid;
+
+                // Update message statuses to 'read' when viewing
+                _updateStatuses(messages);
 
                 // Display messages using ListView.builder
                 // reverse: true makes the list start from the bottom (most recent message visible)
@@ -237,14 +305,13 @@ class _ChatScreenState extends State<ChatScreen> {
                     final senderId = message['senderId'] as String;
                     final text = message['text'] as String? ?? '';
                     final timestamp = message['timestamp'] as Timestamp?;
+                    final status = message['status'] as String? ?? 'sent';
 
-                    // Determine if message was sent by current user
-                    final isSentByMe = senderId == currentUserId;
-
-                    // Display MessageBubble with proper styling
+                    // Display MessageBubble with proper styling including status ticks
                     return MessageBubble(
                       text: text,
-                      isSentByMe: isSentByMe,
+                      senderId: senderId,
+                      status: status,
                       timestamp: timestamp?.toDate(),
                     );
                   },
@@ -320,61 +387,105 @@ class _ChatScreenState extends State<ChatScreen> {
 
 /// MessageBubble Widget - Displays individual messages
 /// Differentiates between sent and received messages with styling
+/// Shows status ticks (sent/delivered/read) for sent messages
 class MessageBubble extends StatelessWidget {
   final String text;
-  final bool isSentByMe;
+  final String senderId;
+  final String status;
   final DateTime? timestamp;
 
   const MessageBubble({
     super.key,
     required this.text,
-    required this.isSentByMe,
+    required this.senderId,
+    required this.status,
     this.timestamp,
   });
 
+  /// Helper function to build status icon based on message status
+  /// WhatsApp-style status indicators:
+  /// - Single grey tick for 'sent'
+  /// - Double grey ticks for 'delivered'
+  /// - Double blue ticks for 'read'
+  Widget _buildStatusIcon(String status) {
+    switch (status) {
+      case 'read':
+        return const Icon(
+          Icons.done_all, // Double tick
+          color: Colors.blue, // Blue for read
+          size: 16,
+        );
+      case 'delivered':
+        return const Icon(
+          Icons.done_all, // Double tick
+          color: Colors.grey, // Grey for delivered
+          size: 16,
+        );
+      case 'sent':
+        return const Icon(
+          Icons.done, // Single tick
+          color: Colors.grey, // Grey for sent
+          size: 16,
+        );
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Determine if message was sent by current user
+    final isSentByMe = senderId == FirebaseAuth.instance.currentUser!.uid;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        mainAxisAlignment: isSentByMe
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
-        children: [
-          Flexible(
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.7,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                // Primary color (black) for sent messages
-                // Grey color for received messages
-                color: isSentByMe ? Colors.black87 : Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(20),
-                  topRight: const Radius.circular(20),
-                  bottomLeft: Radius.circular(isSentByMe ? 20 : 6),
-                  bottomRight: Radius.circular(isSentByMe ? 6 : 20),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 5,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Text(
-                text,
-                style: TextStyle(
-                  color: isSentByMe ? Colors.white : Colors.black87,
-                  fontSize: 15,
-                ),
-              ),
-            ),
+      child: Align(
+        alignment: isSentByMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.7,
           ),
-        ],
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            // Primary color (black) for sent messages
+            // Grey color for received messages
+            color: isSentByMe ? Colors.black87 : Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(20),
+              topRight: const Radius.circular(20),
+              bottomLeft: Radius.circular(isSentByMe ? 20 : 6),
+              bottomRight: Radius.circular(isSentByMe ? 6 : 20),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 5,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Message text
+              Flexible(
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    color: isSentByMe ? Colors.white : Colors.black87,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              // Status icon - only visible for sent messages
+              if (isSentByMe) ...[
+                const SizedBox(width: 6),
+                _buildStatusIcon(status),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
