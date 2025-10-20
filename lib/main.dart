@@ -4,10 +4,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'blocs/auth/auth_bloc.dart';
 import 'blocs/auth/auth_event.dart';
 import 'blocs/auth/auth_state.dart';
+import 'blocs/chat/chat_bloc.dart';
 import 'repositories/auth_repository.dart';
 import 'services/auth_service.dart';
 import 'services/profile_service.dart';
 import 'pages/auth/login_page.dart';
+import 'pages/main_page.dart';
 import 'theme/theme.dart';
 import 'firebase_options.dart';
 
@@ -28,12 +30,16 @@ class MyApp extends StatelessWidget {
 
     return RepositoryProvider.value(
       value: repo,
-      child: BlocProvider(
-        create: (_) => AuthBloc(repo)..add(AuthStarted()),
+      child: MultiBlocProvider(
+        providers: [
+          BlocProvider(create: (_) => AuthBloc(repo)..add(AuthStarted())),
+          BlocProvider(create: (_) => ChatBloc()),
+        ],
         child: MaterialApp(
           title: 'Chat App',
           theme: AppTheme.light(),
           home: const AuthGate(),
+          debugShowCheckedModeBanner: false,
         ),
       ),
     );
@@ -48,19 +54,7 @@ class AuthGate extends StatelessWidget {
     return BlocBuilder<AuthBloc, AuthState>(
       builder: (context, state) {
         if (state is AuthAuthenticated) {
-          return Scaffold(
-            appBar: AppBar(
-              title: const Text('Home'),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.logout),
-                  onPressed: () =>
-                      context.read<AuthBloc>().add(AuthSignedOut()),
-                ),
-              ],
-            ),
-            body: Center(child: Text('Hello ${state.user.email}')),
-          );
+          return const MainPage();
         }
         return const LoginPage();
       },
