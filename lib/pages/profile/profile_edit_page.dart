@@ -27,17 +27,24 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
   Future<void> _save() async {
     final uid = widget.repo.currentUser?.uid;
-    final email = widget.repo.currentUser?.email ?? '';
+    final email = widget.repo.currentUser?.email;
     if (uid == null) return;
+
     String? photoUrl;
-    if (_photo != null)
+    if (_photo != null) {
       photoUrl = await widget.repo.uploadProfilePhoto(uid, _photo!);
+    }
+
     final user = AppUser(
       uid: uid,
       email: email,
-      name: _name.text.trim(),
-      photoUrl: photoUrl,
-      status: _status.text.trim(),
+      displayName: _name.text.trim().isNotEmpty
+          ? _name.text.trim()
+          : 'Guest User',
+      photoUrl: photoUrl ?? '',
+      status: _status.text.trim().isNotEmpty
+          ? _status.text.trim()
+          : 'Hey there! I\'m new here.',
     );
     await widget.repo.updateProfile(user);
     if (mounted) Navigator.of(context).pop();

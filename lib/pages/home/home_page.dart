@@ -3,6 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../blocs/home/home_bloc.dart';
 import '../../blocs/home/home_event.dart';
 import '../../blocs/home/home_state.dart';
+import '../../blocs/auth/auth_bloc.dart';
+import '../../blocs/auth/auth_event.dart';
 import '../../widgets/home/chat_list_item.dart';
 import '../../widgets/home/search_bar_widget.dart';
 import '../chat/chat_page.dart';
@@ -135,6 +137,32 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _showSignOutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Sign Out'),
+          content: const Text('Are you sure you want to sign out?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                context.read<AuthBloc>().add(AuthSignedOut());
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Sign Out'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -160,6 +188,11 @@ class _HomePageState extends State<HomePage> {
             onPressed: () {
               // TODO: Show notifications
             },
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.black87, size: 24),
+            tooltip: 'Sign Out',
+            onPressed: () => _showSignOutDialog(context),
           ),
           const SizedBox(width: 8),
         ],

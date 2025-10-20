@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:equatable/equatable.dart';
 
 abstract class AuthEvent extends Equatable {
@@ -21,9 +22,15 @@ class AuthSignUpRequested extends AuthEvent {
   final String email;
   final String password;
   final String? displayName;
-  AuthSignUpRequested(this.email, this.password, {this.displayName});
+  final File? profilePhoto;
+  AuthSignUpRequested(
+    this.email,
+    this.password, {
+    this.displayName,
+    this.profilePhoto,
+  });
   @override
-  List<Object?> get props => [email, password, displayName];
+  List<Object?> get props => [email, password, displayName, profilePhoto];
 }
 
 class AuthGoogleSignInRequested extends AuthEvent {}

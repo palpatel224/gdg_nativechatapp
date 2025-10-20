@@ -14,6 +14,7 @@ abstract class IAuthRepository {
   Future<void> signOut();
   Future<void> updateProfile(AppUser user);
   Future<String?> uploadProfilePhoto(String uid, File file);
+  Future<void> createUserProfile(User user);
 }
 
 class AuthRepository implements IAuthRepository {
@@ -64,4 +65,9 @@ class AuthRepository implements IAuthRepository {
   @override
   Future<String?> uploadProfilePhoto(String uid, File file) =>
       _profileService.uploadProfilePhoto(uid, file);
+
+  @override
+  Future<void> createUserProfile(User user) async {
+    await _profileService.createUserProfileInFirestore(user);
+  }
 }

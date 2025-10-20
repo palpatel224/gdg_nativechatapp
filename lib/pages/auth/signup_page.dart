@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../blocs/auth/auth_bloc.dart';
 import '../../blocs/auth/auth_event.dart';
 import '../../blocs/auth/auth_state.dart';
@@ -16,6 +18,41 @@ class _SignupPageState extends State<SignupPage> {
   final _password = TextEditingController();
   final _name = TextEditingController();
   bool _obscurePassword = true;
+  File? _profilePhoto;
+
+  Future<void> _pickProfilePhoto() async {
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 70,
+        maxWidth: 512,
+        maxHeight: 512,
+      );
+
+      if (pickedFile != null) {
+        setState(() {
+          _profilePhoto = File(pickedFile.path);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error picking image: $e'),
+            backgroundColor: Colors.red[400],
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  void _removePhoto() {
+    setState(() {
+      _profilePhoto = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +94,90 @@ class _SignupPageState extends State<SignupPage> {
                   ),
                 ),
                 const SizedBox(height: 40),
+
+                // Profile Photo Picker
+                Center(
+                  child: Stack(
+                    children: [
+                      GestureDetector(
+                        onTap: _pickProfilePhoto,
+                        child: Container(
+                          width: 120,
+                          height: 120,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFFF5F5F5),
+                            border: Border.all(
+                              color: const Color(0xFF6366F1).withOpacity(0.3),
+                              width: 3,
+                            ),
+                            image: _profilePhoto != null
+                                ? DecorationImage(
+                                    image: FileImage(_profilePhoto!),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
+                          ),
+                          child: _profilePhoto == null
+                              ? Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_a_photo,
+                                      size: 36,
+                                      color: Colors.grey[400],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Add Photo',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[500],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : null,
+                        ),
+                      ),
+                      if (_profilePhoto != null)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: GestureDetector(
+                            onTap: _removePhoto,
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.red[400],
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Center(
+                  child: Text(
+                    _profilePhoto == null
+                        ? 'Optional - Add a profile picture'
+                        : 'Tap to change photo',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                  ),
+                ),
+                const SizedBox(height: 32),
 
                 // Name field
                 Container(
@@ -204,6 +325,7 @@ class _SignupPageState extends State<SignupPage> {
                                     _email.text.trim(),
                                     _password.text.trim(),
                                     displayName: _name.text.trim(),
+                                    profilePhoto: _profilePhoto,
                                   ),
                                 );
                               },
