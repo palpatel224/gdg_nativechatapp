@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/user_model.dart';
-import '../chat/chat_page.dart';
+import '../chat/chat_screen.dart';
 
 /// UserListScreen - Displays a list of all registered users from Firestore
 /// Allows the current user to select someone to chat with
@@ -17,7 +17,7 @@ class UserListScreen extends StatefulWidget {
 class _UserListScreenState extends State<UserListScreen> {
   bool _isCreatingChat = false;
 
-  /// Handle user tap - create or get chat and navigate to ChatPage
+  /// Handle user tap - create or get chat and navigate to ChatScreen
   /// CRITICAL: This ensures the chat document exists in Firestore BEFORE navigation
   /// This fixes the edge case where new chats don't appear on the home page
   Future<void> _handleUserTap(AppUser user) async {
@@ -61,15 +61,15 @@ class _UserListScreenState extends State<UserListScreen> {
 
       if (!mounted) return;
 
-      // Navigate to ChatPage with the chat information
+      // Navigate to ChatScreen (provides presence in AppBar) with the chat information
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => ChatPage(
+          builder: (context) => ChatScreen(
             chatId: chatId,
-            userName: user.displayName,
-            userAvatar: user.photoUrl,
-            isOnline: user.isOnline,
+            recipientId: user.uid,
+            recipientName: user.displayName,
+            recipientPhotoUrl: user.photoUrl,
           ),
         ),
       );

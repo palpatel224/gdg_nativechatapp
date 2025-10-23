@@ -8,7 +8,7 @@ import '../../blocs/auth/auth_event.dart';
 import '../../widgets/home/chat_list_item.dart';
 import '../../widgets/home/search_bar_widget.dart';
 import 'user_list_screen.dart';
-import '../chat/chat_page.dart';
+import '../chat/chat_screen.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -297,11 +297,12 @@ class _HomePageState extends State<HomePage> {
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
-                                            builder: (context) => ChatPage(
+                                            builder: (context) => ChatScreen(
                                               chatId: chat.id,
-                                              userName: chat.userName,
-                                              userAvatar: chat.userAvatar,
-                                              isOnline: chat.isOnline,
+                                              recipientId: chat.userId,
+                                              recipientName: chat.userName,
+                                              recipientPhotoUrl:
+                                                  chat.userAvatar,
                                             ),
                                           ),
                                         );

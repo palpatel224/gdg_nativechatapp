@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
 import 'chat_event.dart';
 import 'chat_state.dart';
 import '../../models/message_model.dart';
@@ -10,6 +11,7 @@ import '../../services/chat_service.dart';
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final ChatService _chatService;
   StreamSubscription? _messagesSubscription;
+  StreamSubscription<Position>? _positionStreamSubscription;
 
   ChatBloc(this._chatService) : super(const ChatInitial()) {
     on<ChatLoadMessages>(_onLoadMessages);
@@ -18,11 +20,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatTyping>(_onTyping);
     on<ChatMarkAsRead>(_onMarkAsRead);
     on<ChatMessagesUpdated>(_onMessagesUpdated);
+    on<ChatShareLiveLocation>(_onShareLiveLocation);
+    on<ChatStopSharingLocation>(_onStopSharingLocation);
   }
 
   /// Update message statuses based on current viewing state
   /// - Updates messages from other user to 'delivered' if they are 'sent'
-  /// - Updates messages from other user to 'read' when viewing the chat
+  /// - Does NOT automatically mark as 'read' - that's handled by ChatScreen when user is actively viewing
   Future<void> _updateMessageStatuses(
     String chatId,
     List<QueryDocumentSnapshot> docs,
@@ -39,15 +43,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       // Only update messages from the other user
       if (senderId != currentUserId) {
         // Mark as delivered if still in sent status
+        // This happens when the chat is loaded, even in background
         if (status == 'sent') {
           batch.update(doc.reference, {'status': 'delivered'});
           hasUpdates = true;
         }
-        // Mark as read (happens when actively viewing)
-        else if (status == 'delivered') {
-          batch.update(doc.reference, {'status': 'read'});
-          hasUpdates = true;
-        }
+        // REMOVED: Don't automatically mark as 'read' here
+        // The ChatScreen will handle marking as 'read' only when user is actively viewing
       }
     }
 
@@ -152,7 +154,18 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     Emitter<ChatState> emit,
   ) async {
     final messages = event.messages.cast<MessageModel>();
-    emit(ChatLoaded(chatId: event.chatId, messages: messages));
+    final currentState = state;
+    final isSharingLocation = currentState is ChatLoaded
+        ? currentState.isSharingLocation
+        : false;
+
+    emit(
+      ChatLoaded(
+        chatId: event.chatId,
+        messages: messages,
+        isSharingLocation: isSharingLocation,
+      ),
+    );
   }
 
   Future<void> _onSendMessage(
@@ -209,9 +222,144 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
+  /// Handle sharing live location
+  /// Requests permissions, captures initial location, sends invitation message,
+  /// and starts streaming location updates to Firestore
+  Future<void> _onShareLiveLocation(
+    ChatShareLiveLocation event,
+    Emitter<ChatState> emit,
+  ) async {
+    try {
+      // Check location service status
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        emit(const ChatError('Location services are disabled'));
+        return;
+      }
+
+      // Check and request permissions
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          emit(const ChatError('Location permissions are denied'));
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        emit(const ChatError('Location permissions are permanently denied'));
+        return;
+      }
+
+      // Get initial position
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      final currentUserId = FirebaseAuth.instance.currentUser!.uid;
+
+      // Send invitation message
+      final messageData = <String, dynamic>{
+        'senderId': currentUserId,
+        'text': '📍 Shared my live location.',
+        'timestamp': FieldValue.serverTimestamp(),
+        'status': 'sent',
+        'messageType': 'location',
+        'locationData': {
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+        },
+      };
+
+      await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(event.chatId)
+          .collection('messages')
+          .add(messageData);
+
+      await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(event.chatId)
+          .update({
+            'lastMessage': {
+              'text': '📍 Shared my live location.',
+              'senderId': currentUserId,
+              'timestamp': FieldValue.serverTimestamp(),
+            },
+          });
+
+      // Update state to indicate location sharing is active
+      final currentState = state;
+      if (currentState is ChatLoaded) {
+        emit(currentState.copyWith(isSharingLocation: true));
+      } else {
+        emit(ChatSharingLocation(event.chatId));
+      }
+
+      // Start live location updates
+      const locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10, // Update every 10 meters
+      );
+
+      _positionStreamSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: locationSettings,
+          ).listen((Position position) {
+            // Update live location in Firestore
+            FirebaseFirestore.instance
+                .collection('chats')
+                .doc(event.chatId)
+                .collection('liveLocations')
+                .doc(currentUserId)
+                .set({
+                  'latitude': position.latitude,
+                  'longitude': position.longitude,
+                  'lastUpdated': FieldValue.serverTimestamp(),
+                });
+          });
+    } catch (e) {
+      emit(ChatError('Failed to share location: $e'));
+    }
+  }
+
+  /// Handle stopping live location sharing
+  /// Cancels the position stream and removes location data from Firestore
+  Future<void> _onStopSharingLocation(
+    ChatStopSharingLocation event,
+    Emitter<ChatState> emit,
+  ) async {
+    try {
+      await _positionStreamSubscription?.cancel();
+      _positionStreamSubscription = null;
+
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+      if (currentUserId != null) {
+        await FirebaseFirestore.instance
+            .collection('chats')
+            .doc(event.chatId)
+            .collection('liveLocations')
+            .doc(currentUserId)
+            .delete();
+      }
+
+      // Update state to indicate location sharing stopped
+      final currentState = state;
+      if (currentState is ChatLoaded) {
+        emit(currentState.copyWith(isSharingLocation: false));
+      }
+    } catch (e) {
+      emit(ChatError('Failed to stop sharing location: $e'));
+    }
+  }
+
   @override
   Future<void> close() {
     _messagesSubscription?.cancel();
+    _positionStreamSubscription?.cancel();
     return super.close();
   }
 }
