@@ -19,12 +19,10 @@ import 'theme/theme.dart';
 import 'firebase_options.dart';
 import 'services/presence_service.dart';
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Load environment variables
   await dotenv.load(fileName: ".env");
-
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const MyApp());
 }
@@ -50,7 +48,7 @@ class _MyAppState extends State<MyApp> {
     try {
       await Future.delayed(const Duration(milliseconds: 500));
       if (mounted) {
-        await NotificationService().initialize(context);
+        await NotificationService(navigatorKey).initialize(context);
       }
     } catch (e) {
       print('Error initializing notifications: $e');
@@ -84,6 +82,7 @@ class _MyAppState extends State<MyApp> {
         ],
         child: MaterialApp(
           title: 'Chat App',
+          navigatorKey: navigatorKey,
           theme: AppTheme.light(),
           home: const AuthGate(),
           debugShowCheckedModeBanner: false,
