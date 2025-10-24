@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:bloc/bloc.dart';
 import '../../repositories/auth_repository.dart';
+import '../../services/notification_service.dart';
 import 'auth_event.dart';
 import 'auth_state.dart';
 
@@ -43,6 +44,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
       // Create user profile in Firestore if it doesn't exist
       await _repo.createUserProfile(credential.user!);
+
+      // Save any pending FCM token
+      await NotificationService().savePendingToken();
+
       emit(AuthAuthenticated(credential.user!));
     } catch (e) {
       emit(AuthFailure(e.toString()));
@@ -96,6 +101,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         // Step 5: Create user profile in Firestore with the updated user info
         await _repo.createUserProfile(updatedUser ?? credential.user!);
 
+        // Step 6: Save any pending FCM token
+        await NotificationService().savePendingToken();
+
         emit(AuthAuthenticated(updatedUser ?? credential.user!));
       } catch (profileError) {
         // If profile update fails, still authenticate the user
@@ -106,6 +114,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         } catch (firestoreError) {
           print('Firestore creation error: $firestoreError');
         }
+
+        // Save any pending FCM token
+        await NotificationService().savePendingToken();
+
         emit(AuthAuthenticated(credential.user!));
       }
     } catch (e) {
@@ -128,6 +140,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       final credential = await _repo.signInWithGoogle();
       // Create user profile in Firestore if it doesn't exist
       await _repo.createUserProfile(credential.user!);
+
+      // Save any pending FCM token
+      await NotificationService().savePendingToken();
+
       emit(AuthAuthenticated(credential.user!));
     } catch (e) {
       emit(AuthFailure(e.toString()));

@@ -12,6 +12,7 @@ import 'repositories/chat_repository.dart';
 import 'services/auth_service.dart';
 import 'services/profile_service.dart';
 import 'services/chat_service.dart';
+import 'services/notification_service.dart';
 import 'pages/auth/login_page.dart';
 import 'pages/main_page.dart';
 import 'theme/theme.dart';
@@ -42,6 +43,18 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _presenceService.init();
+    _initializeNotifications();
+  }
+
+  Future<void> _initializeNotifications() async {
+    try {
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) {
+        await NotificationService().initialize(context);
+      }
+    } catch (e) {
+      print('Error initializing notifications: $e');
+    }
   }
 
   @override

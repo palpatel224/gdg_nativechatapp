@@ -1,3 +1,26 @@
 {
-  "java.configuration.updateBuildConfiguration": "interactive"
+  "java.configuration.updateBuildConfiguration": "interactive",
+  "files.associations": {
+    "*.dbclient-js": "javascript",
+    "__bit_reference": "cpp",
+    "__hash_table": "cpp",
+    "__split_buffer": "cpp",
+    "__tree": "cpp",
+    "array": "cpp",
+    "deque": "cpp",
+    "forward_list": "cpp",
+    "initializer_list": "cpp",
+    "ios": "cpp",
+    "list": "cpp",
+    "map": "cpp",
+    "set": "cpp",
+    "span": "cpp",
+    "string": "cpp",
+    "string_view": "cpp",
+    "unordered_map": "cpp",
+    "unordered_set": "cpp",
+    "valarray": "cpp",
+    "vector": "cpp",
+    "*.inc": "cpp"
+  }
 }
