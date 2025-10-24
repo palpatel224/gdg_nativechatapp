@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,12 +13,23 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final ChatService _chatService;
   StreamSubscription? _messagesSubscription;
   StreamSubscription<Position>? _positionStreamSubscription;
+  StreamSubscription? _typingStatusSubscription;
+
+  // Typing debounce management
+  Timer? _typingTimer;
+  bool _isCurrentUserTyping = false;
+
+  // Cache for state management
+  List<MessageModel> _cachedMessages = [];
+  bool _cachedRecipientTyping = false;
+  String _currentChatId = '';
 
   ChatBloc(this._chatService) : super(const ChatInitial()) {
     on<ChatLoadMessages>(_onLoadMessages);
     on<ChatSendMessage>(_onSendMessage);
     on<ChatSendImage>(_onSendImage);
-    on<ChatTyping>(_onTyping);
+    on<ChatUserTyping>(_onUserTyping);
+    on<ChatListenTypingStatus>(_onListenTypingStatus);
     on<ChatMarkAsRead>(_onMarkAsRead);
     on<ChatMessagesUpdated>(_onMessagesUpdated);
     on<ChatShareLiveLocation>(_onShareLiveLocation);
@@ -58,7 +70,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         await batch.commit();
       } catch (e) {
         // Silently fail for status updates
-        print('Failed to update message statuses: $e');
       }
     }
   }
@@ -159,10 +170,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         ? currentState.isSharingLocation
         : false;
 
+    // Cache messages and chatId for typing status updates
+    _cachedMessages = messages;
+    _currentChatId = event.chatId;
+
+    // Use the cached typing status from the typing listener
+    final isRecipientTyping = _cachedRecipientTyping;
+    debugPrint(
+      '[BLoC] _onMessagesUpdated: Using cached isRecipientTyping: $isRecipientTyping',
+    );
+
     emit(
       ChatLoaded(
         chatId: event.chatId,
         messages: messages,
+        isRecipientTyping: isRecipientTyping,
         isSharingLocation: isSharingLocation,
       ),
     );
@@ -203,11 +225,181 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
-  Future<void> _onTyping(ChatTyping event, Emitter<ChatState> emit) async {
+  /// Handle user typing in the message input field
+  /// Implements debounce logic with efficient Firestore writes:
+  /// - Only updates Firestore when typing state changes (not on every keystroke)
+  /// - Uses a 2-second debounce to detect when user stops typing
+  /// - Minimizes writes to prevent connection issues
+  Future<void> _onUserTyping(
+    ChatUserTyping event,
+    Emitter<ChatState> emit,
+  ) async {
     try {
-      await _chatService.updateTypingStatus(event.chatId, event.isTyping);
+      final currentUserUid = FirebaseAuth.instance.currentUser?.uid;
+
+      if (currentUserUid == null) {
+        return;
+      }
+
+      debugPrint('[Typing] User is typing in chat: ${event.chatId}');
+
+      // If not already typing, immediately update Firestore to true
+      if (!_isCurrentUserTyping) {
+        _isCurrentUserTyping = true;
+        debugPrint('[Typing] Setting typing status to true in Firestore');
+        await _chatService.updateTypingStatus(event.chatId, true);
+      }
+
+      // Cancel any existing timer for this chat
+      _typingTimer?.cancel();
+
+      // Start a new 2-second debounce timer
+      _typingTimer = Timer(const Duration(seconds: 2), () async {
+        _isCurrentUserTyping = false;
+        debugPrint(
+          '[Typing] Debounce timeout - Setting typing status to false in Firestore',
+        );
+        try {
+          await _chatService.updateTypingStatus(event.chatId, false);
+        } catch (e) {
+          debugPrint('[Typing] Error updating typing status to false: $e');
+        }
+      });
     } catch (e) {
-      // Silently fail for typing indicators
+      debugPrint('[Typing] Exception in _onUserTyping: $e');
+    }
+  }
+
+  Future<void> _onListenTypingStatus(
+    ChatListenTypingStatus event,
+    Emitter<ChatState> emit,
+  ) async {
+    try {
+      // Cancel previous subscription if exists
+      await _typingStatusSubscription?.cancel();
+
+      final currentUserUid = FirebaseAuth.instance.currentUser?.uid;
+      if (currentUserUid == null) {
+        return;
+      }
+
+      debugPrint(
+        '[Typing] Setting up typing status listener for chat: ${event.chatId}',
+      );
+
+      // Listen to chat document for typing status updates
+      _typingStatusSubscription = FirebaseFirestore.instance
+          .collection('chats')
+          .doc(event.chatId)
+          .snapshots()
+          .listen(
+            (snapshot) {
+              if (!snapshot.exists) {
+                debugPrint('[Typing] Chat document does not exist');
+                return;
+              }
+
+              final data = snapshot.data() as Map<String, dynamic>;
+              if (data.isEmpty) {
+                debugPrint('[Typing] Chat document is empty');
+                return;
+              }
+
+              final typingStatus =
+                  data['typingStatus'] as Map<String, dynamic>? ?? {};
+
+              debugPrint('[Typing] Typing status data: $typingStatus');
+              debugPrint(
+                '[Typing] Typing status keys: ${typingStatus.keys.toList()}',
+              );
+              debugPrint(
+                '[Typing] Typing status values: ${typingStatus.values.toList()}',
+              );
+
+              // Find recipient ID (the participant who is not current user)
+              final participants = List<String>.from(
+                data['participants'] ?? [],
+              );
+
+              final recipientId = participants.firstWhere(
+                (id) => id != currentUserUid,
+                orElse: () => '',
+              );
+
+              if (recipientId.isEmpty) {
+                debugPrint('[Typing] Could not find recipient ID');
+                return;
+              }
+
+              debugPrint(
+                '[Typing] Recipient ID: $recipientId, Participants: $participants, Current User: $currentUserUid',
+              );
+              debugPrint(
+                '[Typing] Checking typingStatus[$recipientId] = ${typingStatus[recipientId]}',
+              );
+
+              // Check if recipient is typing
+              final isRecipientTyping = typingStatus[recipientId] == true;
+
+              debugPrint('[Typing] Recipient is typing: $isRecipientTyping');
+
+              // Cache the typing status
+              _cachedRecipientTyping = isRecipientTyping;
+
+              // Update state with new typing status
+              final updatedState = state;
+              if (updatedState is ChatLoaded) {
+                final oldIsTyping = updatedState.isRecipientTyping;
+
+                // Always emit even if value appears same - Firestore might have updated other fields
+                final newState = updatedState.copyWith(
+                  isRecipientTyping: isRecipientTyping,
+                );
+
+                if (oldIsTyping != isRecipientTyping) {
+                  debugPrint(
+                    '[Typing] Typing status changed from $oldIsTyping to $isRecipientTyping',
+                  );
+                } else {
+                  debugPrint(
+                    '[Typing] Typing status unchanged ($isRecipientTyping), but emitting to ensure UI updates',
+                  );
+                }
+
+                emit(newState);
+                debugPrint(
+                  '[Typing] Emitted new ChatLoaded state with isRecipientTyping: $isRecipientTyping',
+                );
+              } else {
+                // State is not ChatLoaded yet, emit a new ChatLoaded state with cached messages
+                debugPrint(
+                  '[Typing] Current state is not ChatLoaded (${updatedState.runtimeType}), creating ChatLoaded with cached messages',
+                );
+
+                if (_cachedMessages.isNotEmpty && _currentChatId.isNotEmpty) {
+                  final newState = ChatLoaded(
+                    chatId: _currentChatId,
+                    messages: _cachedMessages,
+                    isRecipientTyping: isRecipientTyping,
+                    isSharingLocation: false,
+                  );
+                  emit(newState);
+                  debugPrint(
+                    '[Typing] Emitted ChatLoaded state with cached messages and isRecipientTyping: $isRecipientTyping',
+                  );
+                } else {
+                  debugPrint(
+                    '[Typing] Cached messages or chatId not available, skipping emission',
+                  );
+                }
+              }
+            },
+            onError: (error) {
+              debugPrint('[Typing] Error listening to typing status: $error');
+            },
+          );
+    } catch (e) {
+      debugPrint('[Typing] Exception in _onListenTypingStatus: $e');
     }
   }
 
@@ -360,6 +552,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   Future<void> close() {
     _messagesSubscription?.cancel();
     _positionStreamSubscription?.cancel();
+    _typingStatusSubscription?.cancel();
+    _typingTimer?.cancel();
     return super.close();
   }
 }

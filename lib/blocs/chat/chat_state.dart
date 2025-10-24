@@ -24,26 +24,26 @@ class ChatLoading extends ChatState {
 class ChatLoaded extends ChatState {
   final String chatId;
   final List<MessageModel> messages;
-  final bool isOtherUserTyping;
+  final bool isRecipientTyping; // Track if recipient is typing
   final bool isSharingLocation; // Track if current user is sharing location
 
   const ChatLoaded({
     required this.chatId,
     required this.messages,
-    this.isOtherUserTyping = false,
+    this.isRecipientTyping = false,
     this.isSharingLocation = false,
   });
 
   ChatLoaded copyWith({
     String? chatId,
     List<MessageModel>? messages,
-    bool? isOtherUserTyping,
+    bool? isRecipientTyping,
     bool? isSharingLocation,
   }) {
     return ChatLoaded(
       chatId: chatId ?? this.chatId,
       messages: messages ?? this.messages,
-      isOtherUserTyping: isOtherUserTyping ?? this.isOtherUserTyping,
+      isRecipientTyping: isRecipientTyping ?? this.isRecipientTyping,
       isSharingLocation: isSharingLocation ?? this.isSharingLocation,
     );
   }
@@ -52,7 +52,7 @@ class ChatLoaded extends ChatState {
   List<Object?> get props => [
     chatId,
     messages,
-    isOtherUserTyping,
+    isRecipientTyping,
     isSharingLocation,
   ];
 }

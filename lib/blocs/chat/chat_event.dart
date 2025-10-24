@@ -43,16 +43,28 @@ class ChatSendImage extends ChatEvent {
   List<Object?> get props => [chatId, imagePath];
 }
 
-/// Update typing status in a chat
-/// NOTE: ChatScreen doesn't currently use this, but it's available for BLoC consumers
-class ChatTyping extends ChatEvent {
+/// User is typing event - triggered when text input changes
+/// Detects when user starts typing and updates Firestore with typing status
+/// Uses debounce mechanism to prevent excessive updates
+class ChatUserTyping extends ChatEvent {
   final String chatId;
-  final bool isTyping;
 
-  const ChatTyping({required this.chatId, required this.isTyping});
+  const ChatUserTyping({required this.chatId});
 
   @override
-  List<Object?> get props => [chatId, isTyping];
+  List<Object?> get props => [chatId];
+}
+
+/// Listen to typing status changes in a chat
+/// Sets up real-time listener for typing status stream from Firestore
+/// Emits ChatLoaded state with updated isRecipientTyping flag
+class ChatListenTypingStatus extends ChatEvent {
+  final String chatId;
+
+  const ChatListenTypingStatus({required this.chatId});
+
+  @override
+  List<Object?> get props => [chatId];
 }
 
 /// Mark a message as read

@@ -10,6 +10,8 @@ import 'map_screen.dart';
 import '../../blocs/chat/chat_bloc.dart';
 import '../../blocs/chat/chat_event.dart';
 import '../../blocs/chat/chat_state.dart';
+import '../../widgets/typing_indicator.dart';
+import '../../services/typing_service.dart';
 
 /// ChatScreen - A complete StatefulWidget for real-time one-on-one chat
 /// Displays messages using Firestore StreamBuilder and allows sending messages
@@ -36,14 +38,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   bool _isScreenActive = true; // Track if screen is visible and in foreground
   bool _isSharingLocation = false;
+  late final TypingService _typingService;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _typingService = TypingService();
+
     // Mark messages as delivered when this chat screen is opened
     _markMessagesAsDelivered();
-    print('ChatScreen initialized - Location sharing: $_isSharingLocation');
   }
 
   @override
@@ -51,7 +55,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
     _scrollController.dispose();
-    // Note: Location stream cleanup is handled by ChatBloc
+    _typingService.dispose(widget.chatId);
     super.dispose();
   }
 
@@ -182,6 +186,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Handle text input changes to detect typing
+  /// Updates Firestore typing status using TypingService
+  void _handleTyping() {
+    if (_messageController.text.trim().isNotEmpty) {
+      _typingService.updateTypingStatus(widget.chatId, true);
+    }
+  }
+
   /// Send a text message to Firestore
   /// This function performs validation and a two-step write process:
   /// 1. Adds the message to the messages subcollection
@@ -228,6 +240,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       // Cleanup: Clear the text field after sending
       _messageController.clear();
+
+      // Stop typing indicator
+      _typingService.updateTypingStatus(widget.chatId, false);
     } catch (e) {
       // Show error to user if sending fails
       if (!mounted) return;
@@ -262,6 +277,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               final data = snapshot.data!.data() as Map<String, dynamic>;
               final isOnline = data['isOnline'] == true;
               final lastSeen = data['lastSeen'] as Timestamp?;
+
               if (isOnline) {
                 subtitle = 'Online';
               } else if (lastSeen != null) {
@@ -521,6 +537,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ),
             ),
 
+            // Typing Indicator - Shows when recipient is typing
+            StreamBuilder<List<String>>(
+              stream: _typingService.getTypingStatusStream(widget.chatId),
+              initialData: const [],
+              builder: (context, typingSnapshot) {
+                final isRecipientTyping =
+                    typingSnapshot.data?.contains(widget.recipientId) ?? false;
+
+                if (!isRecipientTyping) {
+                  return const SizedBox.shrink(); // No widget when not typing
+                }
+
+                // Show typing indicator when recipient is typing
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: TypingIndicator(),
+                );
+              },
+            ),
+
             // Part 2: Message Input Area
             Container(
               decoration: BoxDecoration(
@@ -568,6 +607,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         ),
                         child: TextField(
                           controller: _messageController,
+                          onChanged: (_) => _handleTyping(),
                           decoration: const InputDecoration(
                             hintText: 'Type a message...',
                             border: InputBorder.none,

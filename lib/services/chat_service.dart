@@ -163,11 +163,19 @@ class ChatService {
   /// Update typing status for a user in a chat
   Future<void> updateTypingStatus(String chatId, bool isTyping) async {
     final currentUserId = _auth.currentUser?.uid;
-    if (currentUserId == null) return;
 
-    await _firestore.collection('chats').doc(chatId).update({
-      'typingStatus.$currentUserId': isTyping,
-    });
+    if (currentUserId == null) {
+      return;
+    }
+
+    try {
+      // Use FieldPath for nested field updates with dynamic keys
+      await _firestore.collection('chats').doc(chatId).set({
+        'typingStatus': {currentUserId: isTyping},
+      }, SetOptions(merge: true));
+    } catch (e) {
+      rethrow;
+    }
   }
 
   /// Send a text message
